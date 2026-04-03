@@ -1,0 +1,271 @@
+{
+  "1": {
+    "inputs": {
+      "ckpt_name": "v1-5-pruned-emaonly.safetensors"
+    },
+    "class_type": "CheckpointLoaderSimple",
+    "_meta": {
+      "title": "Load Checkpoint"
+    }
+  },
+  "2": {
+    "inputs": {
+      "model_name": "mm_sd_v15_v2.ckpt",
+      "beta_schedule": "sqrt_linear (AnimateDiff)",
+      "model": [
+        "22",
+        0
+      ],
+      "context_options": [
+        "12",
+        0
+      ]
+    },
+    "class_type": "ADE_AnimateDiffLoaderGen1",
+    "_meta": {
+      "title": "AnimateDiff Loader 🎭🅐🅓①"
+    }
+  },
+  "4": {
+    "inputs": {
+      "text": "(extreme image collage:1.4), (patchwork of many different individual photographs:1.3), (distinct mosaic tiles with sharp borders:1.2), sharp tile boundaries, each segment contains a unique distinct scene, high detail, masterpieces, cinematic lighting, 8k.",
+      "clip": [
+        "1",
+        1
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP Text Encode (Prompt)"
+    }
+  },
+  "5": {
+    "inputs": {
+      "control_net_name": "control_v11p_sd15_canny.pth"
+    },
+    "class_type": "ControlNetLoader",
+    "_meta": {
+      "title": "Load ControlNet Model"
+    }
+  },
+  "6": {
+    "inputs": {
+      "strength": 1.25,
+      "start_percent": 0,
+      "end_percent": 1,
+      "positive": [
+        "4",
+        0
+      ],
+      "negative": [
+        "7",
+        0
+      ],
+      "control_net": [
+        "5",
+        0
+      ],
+      "image": [
+        "26",
+        0
+      ],
+      "vae": [
+        "1",
+        2
+      ]
+    },
+    "class_type": "ControlNetApplyAdvanced",
+    "_meta": {
+      "title": "Apply ControlNet"
+    }
+  },
+  "7": {
+    "inputs": {
+      "text": "(merged borders:1.3), conjoined shapes, single texture across multiple cells, flat colors, blurry, messy lines, text, watermark, low quality.",
+      "clip": [
+        "1",
+        1
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP Text Encode (Prompt)"
+    }
+  },
+  "8": {
+    "inputs": {
+      "seed": 248406252573653,
+      "steps": 20,
+      "cfg": 8,
+      "sampler_name": "euler",
+      "scheduler": "normal",
+      "denoise": 0.77,
+      "model": [
+        "2",
+        0
+      ],
+      "positive": [
+        "6",
+        0
+      ],
+      "negative": [
+        "6",
+        1
+      ],
+      "latent_image": [
+        "9",
+        0
+      ]
+    },
+    "class_type": "KSampler",
+    "_meta": {
+      "title": "KSampler"
+    }
+  },
+  "9": {
+    "inputs": {
+      "width": 512,
+      "height": 512,
+      "batch_size": 16
+    },
+    "class_type": "EmptyLatentImage",
+    "_meta": {
+      "title": "Empty Latent Image"
+    }
+  },
+  "10": {
+    "inputs": {
+      "frame_rate": 12,
+      "loop_count": 0,
+      "filename_prefix": "ICAS_Final_Collage",
+      "format": "video/h264-mp4",
+      "pix_fmt": "yuv420p",
+      "crf": 19,
+      "save_metadata": true,
+      "trim_to_audio": false,
+      "pingpong": false,
+      "save_output": true,
+      "images": [
+        "11",
+        0
+      ]
+    },
+    "class_type": "VHS_VideoCombine",
+    "_meta": {
+      "title": "Video Combine 🎥🅥🅗🅢"
+    }
+  },
+  "11": {
+    "inputs": {
+      "samples": [
+        "8",
+        0
+      ],
+      "vae": [
+        "1",
+        2
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "VAE Decode"
+    }
+  },
+  "12": {
+    "inputs": {
+      "context_length": 16,
+      "context_stride": 1,
+      "context_overlap": 8,
+      "context_schedule": "uniform",
+      "closed_loop": false,
+      "fuse_method": "flat",
+      "use_on_equal_length": false,
+      "start_percent": 0,
+      "guarantee_steps": 1
+    },
+    "class_type": "ADE_AnimateDiffUniformContextOptions",
+    "_meta": {
+      "title": "Context Options◆Looped Uniform 🎭🅐🅓"
+    }
+  },
+  "15": {
+    "inputs": {
+      "preset": "PLUS (high strength)",
+      "model": [
+        "1",
+        0
+      ]
+    },
+    "class_type": "IPAdapterUnifiedLoader",
+    "_meta": {
+      "title": "IPAdapter Unified Loader"
+    }
+  },
+  "22": {
+    "inputs": {
+      "weight": 0.6,
+      "weight_type": "linear",
+      "start_at": 0,
+      "end_at": 1,
+      "embeds_scaling": "V only",
+      "encode_batch_size": 0,
+      "model": [
+        "15",
+        0
+      ],
+      "ipadapter": [
+        "15",
+        1
+      ],
+      "image": [
+        "28",
+        0
+      ]
+    },
+    "class_type": "IPAdapterBatch",
+    "_meta": {
+      "title": "IPAdapter Batch (Adv.)"
+    }
+  },
+  "26": {
+    "inputs": {
+      "directory": "D:\\NCKU\\CSIE-Project\\Colla\\batch_output\\control_maps",
+      "image_load_cap": 0,
+      "skip_first_images": 0,
+      "select_every_nth": 1
+    },
+    "class_type": "VHS_LoadImagesPath",
+    "_meta": {
+      "title": "Load Images (Path) 🎥🅥🅗🅢"
+    }
+  },
+  "28": {
+    "inputs": {
+      "resize_type": "scale dimensions",
+      "resize_type.width": 512,
+      "resize_type.height": 512,
+      "resize_type.crop": "center",
+      "scale_method": "lanczos",
+      "input": [
+        "29",
+        0
+      ]
+    },
+    "class_type": "ResizeImageMaskNode",
+    "_meta": {
+      "title": "Resize Image/Mask"
+    }
+  },
+  "29": {
+    "inputs": {
+      "directory": "D:\\NCKU\\CSIE-Project\\Colla\\assets",
+      "image_load_cap": 0,
+      "skip_first_images": 0,
+      "select_every_nth": 1
+    },
+    "class_type": "VHS_LoadImagesPath",
+    "_meta": {
+      "title": "Load Images (Path) 🎥🅥🅗🅢"
+    }
+  }
+}

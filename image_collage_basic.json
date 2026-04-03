@@ -1,0 +1,203 @@
+{
+  "1": {
+    "inputs": {
+      "ckpt_name": "v1-5-pruned-emaonly.safetensors"
+    },
+    "class_type": "CheckpointLoaderSimple",
+    "_meta": {
+      "title": "Load Checkpoint"
+    }
+  },
+  "2": {
+    "inputs": {
+      "model_name": "mm_sd_v15_v2.ckpt",
+      "beta_schedule": "sqrt_linear (AnimateDiff)",
+      "model": [
+        "1",
+        0
+      ],
+      "context_options": [
+        "12",
+        0
+      ]
+    },
+    "class_type": "ADE_AnimateDiffLoaderGen1",
+    "_meta": {
+      "title": "AnimateDiff Loader 🎭🅐🅓①"
+    }
+  },
+  "4": {
+    "inputs": {
+      "text": "(masterpiece, best quality:1.2), creative image collage, photo montage, scrapbooking art, fantasy forest landscape photos, magazine cutouts, distinct images in each grid, white borders between pictures, (green and earthy color palette:1.2), highly detailed collage art, aesthetic composition.",
+      "clip": [
+        "1",
+        1
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP Text Encode (Prompt)"
+    }
+  },
+  "5": {
+    "inputs": {
+      "control_net_name": "control_v11p_sd15_canny.pth"
+    },
+    "class_type": "ControlNetLoader",
+    "_meta": {
+      "title": "Load ControlNet Model"
+    }
+  },
+  "6": {
+    "inputs": {
+      "strength": 0.85,
+      "start_percent": 0,
+      "end_percent": 1,
+      "positive": [
+        "4",
+        0
+      ],
+      "negative": [
+        "7",
+        0
+      ],
+      "control_net": [
+        "5",
+        0
+      ],
+      "image": [
+        "22",
+        0
+      ],
+      "vae": [
+        "1",
+        2
+      ]
+    },
+    "class_type": "ControlNetApplyAdvanced",
+    "_meta": {
+      "title": "Apply ControlNet"
+    }
+  },
+  "7": {
+    "inputs": {
+      "text": "(worst quality, low quality:1.4), single continuous image, solid object, seamless, blended textures, 3D character, 3D render, plain background, realistic person, single scene, cluttered, overcrowded, rainbow colors.",
+      "clip": [
+        "1",
+        1
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP Text Encode (Prompt)"
+    }
+  },
+  "8": {
+    "inputs": {
+      "seed": 1077606218721288,
+      "steps": 25,
+      "cfg": 8,
+      "sampler_name": "euler",
+      "scheduler": "normal",
+      "denoise": 1,
+      "model": [
+        "2",
+        0
+      ],
+      "positive": [
+        "6",
+        0
+      ],
+      "negative": [
+        "6",
+        1
+      ],
+      "latent_image": [
+        "9",
+        0
+      ]
+    },
+    "class_type": "KSampler",
+    "_meta": {
+      "title": "KSampler"
+    }
+  },
+  "9": {
+    "inputs": {
+      "width": 512,
+      "height": 512,
+      "batch_size": 16
+    },
+    "class_type": "EmptyLatentImage",
+    "_meta": {
+      "title": "Empty Latent Image"
+    }
+  },
+  "10": {
+    "inputs": {
+      "frame_rate": 12,
+      "loop_count": 0,
+      "filename_prefix": "ICAS_Final_Collage",
+      "format": "video/h264-mp4",
+      "pix_fmt": "yuv420p",
+      "crf": 19,
+      "save_metadata": true,
+      "trim_to_audio": false,
+      "pingpong": false,
+      "save_output": true,
+      "images": [
+        "11",
+        0
+      ]
+    },
+    "class_type": "VHS_VideoCombine",
+    "_meta": {
+      "title": "Video Combine 🎥🅥🅗🅢"
+    }
+  },
+  "11": {
+    "inputs": {
+      "samples": [
+        "8",
+        0
+      ],
+      "vae": [
+        "1",
+        2
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "VAE Decode"
+    }
+  },
+  "12": {
+    "inputs": {
+      "context_length": 16,
+      "context_stride": 1,
+      "context_overlap": 8,
+      "context_schedule": "uniform",
+      "closed_loop": false,
+      "fuse_method": "flat",
+      "use_on_equal_length": false,
+      "start_percent": 0,
+      "guarantee_steps": 1
+    },
+    "class_type": "ADE_AnimateDiffUniformContextOptions",
+    "_meta": {
+      "title": "Context Options◆Looped Uniform 🎭🅐🅓"
+    }
+  },
+  "22": {
+    "inputs": {
+      "directory": "D:\\NCKU\\CSIE-Project\\Colla\\batch_output\\control_maps",
+      "image_load_cap": 0,
+      "skip_first_images": 0,
+      "select_every_nth": 1
+    },
+    "class_type": "VHS_LoadImagesPath",
+    "_meta": {
+      "title": "Load Images (Path) 🎥🅥🅗🅢"
+    }
+  }
+}

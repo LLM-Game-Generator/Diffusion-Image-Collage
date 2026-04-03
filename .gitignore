@@ -3,5 +3,5 @@ __pycache__
 input_silhouette_frames/
 batch_output/
 videos/
-
+assets/mask
 .venv/

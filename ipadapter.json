@@ -1,0 +1,67 @@
+{
+  "1": {
+    "inputs": { "ckpt_name": "v1-5-pruned-emaonly.safetensors" },
+    "class_type": "CheckpointLoaderSimple"
+  },
+  "2": {
+    "inputs": { 
+      "model_name": "mm_sd_v15_v2.ckpt",
+      "beta_schedule": "sqrt_linear (AnimateDiff)",
+      "model": [ "14", 0 ],
+      "context_options": [ "12", 0 ]
+    },
+    "class_type": "ADE_AnimateDiffLoaderGen1"
+  },
+  "3": {
+    "inputs": { "directory": "./batch_output/control_maps", "image_load_cap": 92, "path_filter": "*.png" },
+    "class_type": "VHS_LoadImages"
+  },
+  "4": {
+    "inputs": { "text": "professional high-quality photo collage, distinct mosaic tiles, sharp borders, segmented nature scenes, vibrant masterpiece, 8k", "clip": [ "1", 1 ] },
+    "class_type": "CLIPTextEncode"
+  },
+  "5": {
+    "inputs": { "control_net_name": "control_v11p_sd15_canny.pth" },
+    "class_type": "ControlNetLoader"
+  },
+  "6": {
+    "inputs": { "positive": [ "4", 0 ], "negative": [ "7", 0 ], "control_net": [ "5", 0 ], "image": [ "3", 0 ], "vae": [ "1", 2 ], "strength": 1.0, "start_percent": 0.0, "end_percent": 1.0 },
+    "class_type": "ControlNetApplyAdvanced"
+  },
+  "7": {
+    "inputs": { "text": "merged borders, blurry, messy, overlapping subjects, low quality, text, watermark", "clip": [ "1", 1 ] },
+    "class_type": "CLIPTextEncode"
+  },
+  "8": {
+    "inputs": { "model": [ "2", 0 ], "positive": [ "6", 0 ], "negative": [ "6", 1 ], "latent_image": [ "9", 0 ], "seed": 42, "steps": 20, "cfg": 8.0, "sampler_name": "euler", "scheduler": "normal", "denoise": 0.9 },
+    "class_type": "KSampler"
+  },
+  "9": {
+    "inputs": { "width": 512, "height": 512, "batch_size": 16 },
+    "class_type": "EmptyLatentImage"
+  },
+  "10": {
+    "inputs": { "images": [ "11", 0 ], "frame_rate": 12, "filename_prefix": "ICAS_Final_Collage", "format": "video/h264-mp4", "save_output": true },
+    "class_type": "VHS_VideoCombine"
+  },
+  "11": {
+    "inputs": { "samples": [ "8", 0 ], "vae": [ "1", 2 ] },
+    "class_type": "VAEDecode"
+  },
+  "12": {
+    "inputs": { "context_length": 16, "context_stride": 1, "context_overlap": 8, "context_schedule": "uniform", "closed_loop": false },
+    "class_type": "ADE_AnimateDiffUniformContextOptions"
+  },
+  "13": {
+    "inputs": { "image": "reference_style_image.png" },
+    "class_type": "LoadImage"
+  },
+  "14": {
+    "inputs": { "weight": 0.7, "ipadapter": [ "15", 0 ], "model": [ "1", 0 ], "image": [ "13", 0 ] },
+    "class_type": "IPAdapter"
+  },
+  "15": {
+    "inputs": { "preset": "PLUS (SD15)" },
+    "class_type": "IPAdapterUnifiedLoader"
+  }
+}
