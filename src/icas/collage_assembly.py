@@ -1,3 +1,5 @@
+import os.path
+
 from shapely.geometry import Polygon
 from shapely.geometry import MultiPolygon
 import numpy as np
@@ -180,6 +182,41 @@ def retarget_warp(image,
     
     return whole_canvas
 
+
+# def retarget_seam_carving(image, width, height):
+#     """
+#     [極速優化版] 捨棄極度耗時的 Seam Carving 演算法。
+#     改用中心裁切 (Center Crop) 配合 OpenCV 高效縮放。
+#     速度提升約 100 倍，且能有效消除動態影片中的像素閃爍現象。
+#     """
+#     h, w = image.shape[:2]
+#
+#     # 邊界與防呆處理
+#     if width <= 0 or height <= 0:
+#         return image
+#     if w == width and h == height:
+#         return image
+#
+#     target_aspect = width / height
+#     current_aspect = w / h
+#
+#     # 裁切邏輯：確保圖片比例不變，精準裁掉多餘的邊緣
+#     if current_aspect > target_aspect:
+#         # 原圖比較寬 -> 裁切左右邊緣保留中心
+#         new_w = int(h * target_aspect)
+#         start_x = (w - new_w) // 2
+#         cropped = image[:, start_x:start_x + new_w]
+#     else:
+#         # 原圖比較高 -> 裁切上下邊緣保留中心
+#         new_h = int(w / target_aspect)
+#         start_y = (h - new_h) // 2
+#         cropped = image[start_y:start_y + new_h, :]
+#
+#     # 使用 INTER_AREA 進行高品質的降採樣縮放 (利用 OpenCV C++ 底層硬體加速)
+#     resized_image = cv2.resize(cropped, (width, height), interpolation=cv2.INTER_AREA)
+#
+#     return resized_image
+
 def retarget_seam_carving(image, target_width, target_height):
     scale_factor = max(target_width/image.shape[1], target_height/image.shape[0])
     scaled = cv2.resize(image, (int(image.shape[1]*scale_factor), int(image.shape[0]*scale_factor)))
@@ -339,7 +376,17 @@ def render_collage(input_image_collection_folder, output_dir, scaling_factor):
     write_color_image(canvas_border, join(output_dir, 'collage_white_space.png'))
 
 if __name__ == '__main__':
-    input_image_collection_folder = sys.argv[1]
-    output_dir = sys.argv[2]
-    scaling_factor = int(sys.argv[3])
-    render_collage(input_image_collection_folder, output_dir, scaling_factor)
+    # input_image_collection_folder = sys.argv[1]
+    # output_dir = sys.argv[2]
+    # scaling_factor = int(sys.argv[3])
+    # render_collage(input_image_collection_folder, output_dir, scaling_factor)
+    from src.config import *
+    import time
+
+    start = time.perf_counter()
+
+    render_collage(ASSETS_IMAGES_DIR, os.path.join(JSON_DIR, "./frame_0000/"), 1)
+
+    end = time.perf_counter()
+
+    print(f"render_collage 執行時間: {end - start:.6f} 秒")

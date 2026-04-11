@@ -6,6 +6,7 @@ import numpy as np
 from shapely.geometry import Polygon
 import matplotlib.pyplot as plt
 import matplotlib.patches as pat
+from matplotlib.path import Path
 from descartes.patch import PolygonPatch
 from os import listdir
 from os.path import isfile, join
@@ -63,16 +64,30 @@ def generate_canvas_polygon(img, complement=False):
 def plot_polygon(polygon, img_w, img_h):
     main_fig, main_ax = plt.subplots(nrows=1, ncols=1, num='Layout', figsize=(img_w / 100, img_h / 100))
     plt.subplots_adjust(left=0, bottom=0, right=1, top=1)
-    # main_ax.axis(True)
-    main_ax.invert_yaxis()
-    main_ax.imshow(255 * np.ones((img_h, img_w, 3), np.uint8), origin='lower')
-    # exterior = np.array(polygon.exterior.coords, dtype='int32')
-    # interior = [np.array(interior.coords, dtype='int32') for interior in list(polygon.interiors)]
-    # lyr_cnt = main_ax.add_patch(pat.Polygon(exterior, closed=True, color='black', fill=False, ls='-', lw=1, zorder=1))
-    patch1 = PolygonPatch(polygon, fc='#009100', alpha=0.5, zorder=2)
-    lyr_cnt = main_ax.add_patch(patch1)
-    return
 
+    main_ax.invert_yaxis()
+    # Create the background
+    main_ax.imshow(255 * np.ones((img_h, img_w, 3), np.uint8), origin='lower')
+
+    # --- REPLACEMENT FOR PolygonPatch ---
+    # 1. Get the exterior coordinates
+    exterior = np.asarray(polygon.exterior.coords)
+    # 2. Get all interior (holes) coordinates
+    interiors = [np.asarray(ring.coords) for ring in polygon.interiors]
+
+    # 3. Create a Matplotlib Path
+    # make_compound_path handles the exterior and all holes automatically
+    path = Path.make_compound_path(
+        Path(exterior),
+        *[Path(ring) for ring in interiors]
+    )
+
+    # 4. Create the Patch
+    patch1 = pat.PathPatch(path, facecolor='#009100', alpha=0.5, zorder=2, edgecolor='none')
+    # -------------------------------------
+
+    main_ax.add_patch(patch1)
+    return
 
 '''
 Preprocessing the input image for medial axis extraction
@@ -145,7 +160,7 @@ def merge(set1, set2, return_distance=False):
 
 
 def detect_ridges(gray, sigma=3.0):
-    H_elems = hessian_matrix(gray, sigma=0.1)
+    H_elems = hessian_matrix(gray, sigma=0.1, use_gaussian_derivatives=False)
     i1, i2 = hessian_matrix_eigvals(H_elems)
     return i1, i2
 
@@ -155,7 +170,7 @@ def ridge_medial_axis(image, ridge_threshold=0.3, small_threshold=5, component_m
     detected_ridges = detect_ridges(distance_map[0])[1] < -ridge_threshold
 
     # Cleanup ridges map by filtering out small objects
-    cleanup = np.uint8(morphology.remove_small_objects(detected_ridges, small_threshold))
+    cleanup = np.uint8(morphology.remove_small_objects(detected_ridges, max_size=small_threshold))
 
     # Connect broken lines
     kernel = cv2.getStructuringElement(cv2.MORPH_CROSS, (3, 3))
@@ -165,7 +180,7 @@ def ridge_medial_axis(image, ridge_threshold=0.3, small_threshold=5, component_m
     skeleton = np.uint8(morphology.skeletonize(fix_broken))
 
     # Remove remaining isolated patches
-    second_filtered = np.uint8(morphology.remove_small_objects(skeleton > 0, 10, 8))
+    second_filtered = np.uint8(morphology.remove_small_objects(skeleton > 0, max_size=10, connectivity=8))
 
     # Identify connected component
     cc = cv2.connectedComponentsWithStats(second_filtered, 8, cv2.CV_32S)
@@ -282,12 +297,14 @@ def build_medial_multilinestring(medial_axis, min_line_length=20):
     # output connected component lable for graph generation
     line_label = []
     if merged_line.geom_type == 'MultiLineString':
-        for line in merged_line:
-            # print(list(line.coords)[0][0]-medial_axis.shape[0] )
-            row, col = xy2rowcol(list(line.coords)[0][0], list(line.coords)[0][1], medial_axis.shape[0])
-            line_label.append(medial_axis[row, col])
-    elif merged_line.geom_type == 'LineString':
-        row, col = xy2rowcol(list(merged_line.coords)[0][0], list(merged_line.coords)[0][1], medial_axis.shape[0])
+        lines = merged_line.geoms
+    else:
+        lines = [merged_line]
+
+    for line in lines:
+        row, col = xy2rowcol(list(line.coords)[0][0],
+                             list(line.coords)[0][1],
+                             medial_axis.shape[0])
         line_label.append(medial_axis[row, col])
     return merged_line, line_label
 
@@ -323,6 +340,7 @@ def redistribute_vertices(geom, gap):
         return LineString(
             [geom.interpolate(float(n) / num_vert, normalized=True)
              for n in range(num_vert + 1)])
+
     elif geom.geom_type == 'LinearRing':
         num_vert = int(round(geom.length / gap))
         if num_vert == 0:
@@ -330,33 +348,47 @@ def redistribute_vertices(geom, gap):
         return LinearRing(
             [geom.interpolate(float(n) / num_vert, normalized=True)
              for n in range(num_vert + 1)])
+
     elif geom.geom_type == 'MultiLineString':
+        # FIX: Access .geoms to iterate over the parts
         parts = [redistribute_vertices(part, gap)
-                 for part in geom]
+                 for part in geom.geoms]
         return type(geom)([p for p in parts if not p.is_empty])
+
     else:
-        raise ValueError('unhandled geometry %s', (geom.geom_type,))
+        raise ValueError(f'unhandled geometry {geom.geom_type}')
+
+
+import networkx as nx
+import numpy as np
 
 
 def build_medial_graph(multilinestring, line_labels, distance, small_branch=8, connecting_mode=False):
     G = nx.Graph()
+
     if multilinestring.geom_type == 'MultiLineString':
-        for line in multilinestring:
+        # FIX: Iterate over .geoms instead of the object directly
+        for line in multilinestring.geoms:
             for i in range(len(line.coords) - 1):
                 x_1, y_1 = line.coords[i][0], line.coords[i][1]
                 row_1, col_1 = xy2rowcol(x_1, y_1, distance.shape[0])
                 x_2, y_2 = line.coords[i + 1][0], line.coords[i + 1][1]
                 row_2, col_2 = xy2rowcol(x_2, y_2, distance.shape[0])
+
                 hash_1 = hash((x_1, y_1))
                 hash_2 = hash((x_2, y_2))
+
                 G.add_node(hash_1, x=x_1, y=y_1, distance=distance[row_1, col_1])
                 G.add_node(hash_2, x=x_2, y=y_2, distance=distance[row_2, col_2])
                 G.add_edge(hash_1, hash_2)
+
         if connecting_mode:
-            # connecting graph in the same component
+            # Connecting graph in the same component
             labels = set(line_labels)
             for label in labels:
-                current_lines = [multilinestring[i] for i, line_label in enumerate(line_labels) if line_label == label]
+                # FIX: Access individual lines via .geoms[i]
+                current_lines = [multilinestring.geoms[i] for i, line_label in enumerate(line_labels) if
+                                 line_label == label]
 
                 for i in range(len(current_lines) - 1):
                     j_acc = -1
@@ -366,10 +398,12 @@ def build_medial_graph(multilinestring, line_labels, distance, small_branch=8, c
                                           return_distance=True)
                         if d < d_acc:
                             j_acc = j
-                    l1, l2 = merge(list(current_lines[i].coords), list(current_lines[j_acc].coords))
-                    hash_1 = hash((l1[0], l1[1]))
-                    hash_2 = hash((l2[0], l2[1]))
-                    G.add_edge(hash_1, hash_2)
+
+                    if j_acc != -1:
+                        l1, l2 = merge(list(current_lines[i].coords), list(current_lines[j_acc].coords))
+                        hash_1 = hash((l1[0], l1[1]))
+                        hash_2 = hash((l2[0], l2[1]))
+                        G.add_edge(hash_1, hash_2)
 
     elif multilinestring.geom_type == 'LineString':
         for i in range(len(multilinestring.coords) - 1):
@@ -377,25 +411,36 @@ def build_medial_graph(multilinestring, line_labels, distance, small_branch=8, c
             row_1, col_1 = xy2rowcol(x_1, y_1, distance.shape[0])
             x_2, y_2 = multilinestring.coords[i + 1][0], multilinestring.coords[i + 1][1]
             row_2, col_2 = xy2rowcol(x_2, y_2, distance.shape[0])
+
             hash_1 = hash((x_1, y_1))
             hash_2 = hash((x_2, y_2))
+
             G.add_node(hash_1, x=x_1, y=y_1, distance=distance[row_1, col_1])
             G.add_node(hash_2, x=x_2, y=y_2, distance=distance[row_2, col_2])
             G.add_edge(hash_1, hash_2)
 
-    # Remove small branches
-    G.remove_edges_from(nx.selfloop_edges(G))  # remove self-loops for possible error
+    # --- Post-processing: Remove small branches ---
+
+    # Remove self-loops to prevent logic errors
+    G.remove_edges_from(nx.selfloop_edges(G))
+
+    # Identify branching nodes (junctions)
     branchings = [x for x in G.nodes() if G.degree(x) >= 3]
 
     for branching in branchings:
-        # check if the branching is deleted by previous runs
+        # Check if the branching still exists (might have been removed in a previous iteration)
         if branching in G.nodes():
             cut_vertices = list(G.neighbors(branching))
             for cut_vertex in cut_vertices:
+                # Temporarily remove the junction to isolate the branch
                 temp = G.copy()
                 temp.remove_node(branching)
+
                 if cut_vertex in temp.nodes():
+                    # Find all nodes in the component starting from the cut_vertex
                     connected = nx.dfs_tree(temp, source=cut_vertex).to_undirected()
+
+                    # If the isolated branch is shorter than the threshold, prune it
                     if len(connected.nodes) < small_branch:
                         G.remove_nodes_from(list(connected.nodes))
 
@@ -1099,7 +1144,7 @@ class InteriorAngle:
                 cur_node.left_child = Node(cur_node.start_vector, cut_vector)
                 cur_node.right_child = Node(cut_vector, cur_node.end_vector)
         else:
-            print("Invalid cut")
+            print("shape_decomposition: InteriorAngle: Invalid cut")
 
     def is_convex(self):
         angles = self.list_leaves()

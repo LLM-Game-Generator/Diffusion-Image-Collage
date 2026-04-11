@@ -7,6 +7,7 @@ import src.icas.shape_decomposition as sd
 import cv2
 import matplotlib.pyplot as plt
 import matplotlib
+from matplotlib.path import Path
 from matplotlib import pyplot as plt
 
 from ortools.linear_solver import pywraplp
@@ -77,12 +78,9 @@ class Part:
 class Partition:
     def __init__(self, polygon):
         self.root = Part(polygon)
-        # self.tolerance = math.pi / 12.0
         self.cut_list = []
 
     def add_cut(self, cut_vector):
-        # print("cut added")
-        # keep track of all the cuts
         if self.root.contains(cut_vector):
             self.cut_list.append(cut_vector)
         self._add_cut(cut_vector, self.root)
@@ -95,16 +93,21 @@ class Partition:
                 else:
                     self._add_cut(cut_vector, cur_node.right_child)
             else:
-                # print(len())
-                children = list(
-                    ops.split(cur_node.polygon, LineString([Point(p) for p in extend_line_segment(cut_vector, 3)])))
+                # FIX: Access .geoms because GeometryCollection is not directly iterable in Shapely 2.0
+                split_geom = ops.split(
+                    cur_node.polygon,
+                    LineString([Point(p) for p in extend_line_segment(cut_vector, 3)])
+                )
+                children = list(split_geom.geoms)
+
                 if len(children) < 2:
                     return
+
                 children.sort(key=lambda x: -x.area)
                 cur_node.left_child = Part(children[0])
                 cur_node.right_child = Part(children[1])
         else:
-            print("Invalid cut")
+            print("sas_optimization: Partition: Invalid cut")
 
     def list_leaves(self):
         return self._list_leaves(self.root)
@@ -115,20 +118,12 @@ class Partition:
         else:
             return self._list_leaves(cur_node.left_child) + self._list_leaves(cur_node.right_child)
 
-    '''
-    Transform the partition (shapely polygons) into matrix representation (labeled images)
-    for evaluation purposes.
-
-    matrix_scale is the minimum axis of the matrix
-    '''
-
     def matrix_representation(self, matrix_scale=150):
         partitions = self.list_leaves()
         bounding_box = self.root.polygon.exterior.bounds
         width = int(math.ceil(bounding_box[2]) - math.floor(bounding_box[0]))
         height = int(math.ceil(bounding_box[3]) - math.floor(bounding_box[1]))
 
-        # Rescale the dimension for faster computation
         if matrix_scale < width < height:
             new_width = matrix_scale
             new_height = int(matrix_scale / width * height)
@@ -143,9 +138,12 @@ class Partition:
         for x in range(new_width):
             for y in range(new_height):
                 i = 1
+                sample_point = Point(
+                    math.floor(bounding_box[0]) + x / new_width * width,
+                    math.floor(bounding_box[1]) + y / new_height * height
+                )
                 for partition in partitions:
-                    if (partition.polygon.contains(Point(math.floor(bounding_box[0]) + x / new_width * width,
-                                                         math.floor(bounding_box[1]) + y / new_height * height))):
+                    if partition.polygon.contains(sample_point):
                         initial[y, x] = i
                         break
                     i += 1
@@ -156,56 +154,70 @@ class Partition:
         length = len(partitions)
         bounding_box = self.root.polygon.exterior.bounds
 
-        cmap = matplotlib.cm.get_cmap("jet", length)
-        cmaplist = [cmap(i) for i in range(cmap.N)]
+        # Updated colormap access for modern Matplotlib
+        cmap = plt.get_cmap("jet", length)
         img_w = int(bounding_box[2])
         img_h = int(bounding_box[3])
+
         main_fig, main_ax = plt.subplots(nrows=1, ncols=1, num='Layout', figsize=(img_w / 100, img_h / 100))
-        # main_ax.set_axis_off()
         plt.subplots_adjust(left=0, bottom=0, right=1, top=1)
         main_ax.axis(False)
         main_ax.invert_yaxis()
         main_ax.imshow(255 * np.ones((img_h, img_w, 3), np.uint8), origin='lower')
-        # exterior = np.array(polygon.exterior.coords, dtype='int32')
-        # interior = [np.array(interior.coords, dtype='int32') for interior in list(polygon.interiors)]
-        # lyr_cnt = main_ax.add_patch(pat.Polygon(exterior, closed=True, color='black', fill=False, ls='-', lw=1, zorder=1))
+
         for i, partition in enumerate(partitions):
-            patch1 = PolygonPatch(partition.polygon, fc=cmaplist[i], alpha=0.5, zorder=2)
-            lyr_cnt = main_ax.add_patch(patch1)
+            poly = partition.polygon
+            # REPLACEMENT FOR PolygonPatch: Native Matplotlib Path
+            exterior = np.asarray(poly.exterior.coords)
+            interiors = [np.asarray(ring.coords) for ring in poly.interiors]
+            path = Path.make_compound_path(Path(exterior), *[Path(ring) for ring in interiors])
+
+            patch = pat.PathPatch(path, facecolor=cmap(i), alpha=0.5, zorder=2, edgecolor='black', lw=0.5)
+            main_ax.add_patch(patch)
+
+        plt.show()  # Or savefig
 
 
 def build_medial_graph(multilinestring, line_labels, distance, small_branch=8, connecting_mode=False):
     G = nx.Graph()
     if multilinestring.geom_type == 'MultiLineString':
-        for line in multilinestring:
+        # FIX: Shapely 2.0 requires .geoms for iteration
+        for line in multilinestring.geoms:
             for i in range(len(line.coords) - 1):
                 x_1, y_1 = line.coords[i][0], line.coords[i][1]
                 row_1, col_1 = sd.xy2rowcol(x_1, y_1, distance.shape[0])
                 x_2, y_2 = line.coords[i + 1][0], line.coords[i + 1][1]
                 row_2, col_2 = sd.xy2rowcol(x_2, y_2, distance.shape[0])
+
                 hash_1 = hash((x_1, y_1))
                 hash_2 = hash((x_2, y_2))
+
                 G.add_node(hash_1, x=x_1, y=y_1, distance=distance[row_1, col_1])
                 G.add_node(hash_2, x=x_2, y=y_2, distance=distance[row_2, col_2])
                 G.add_edge(hash_1, hash_2, weight=math.sqrt((x_1 - x_2) ** 2 + (y_1 - y_2) ** 2))
+
         if connecting_mode:
-            # connecting graph in the same component
             labels = set(line_labels)
             for label in labels:
-                current_lines = [multilinestring[i] for i, line_label in enumerate(line_labels) if line_label == label]
+                # FIX: Access individual lines via .geoms[i]
+                current_lines = [multilinestring.geoms[i] for i, line_label in enumerate(line_labels) if
+                                 line_label == label]
 
                 for i in range(len(current_lines) - 1):
                     j_acc = -1
                     d_acc = np.inf
                     for j in range(i + 1, len(current_lines)):
-                        l1, l2, d = merge(list(current_lines[i].coords), list(current_lines[j].coords),
-                                          return_distance=True)
+                        l1, l2, d = sd.merge(list(current_lines[i].coords), list(current_lines[j].coords),
+                                             return_distance=True)
                         if d < d_acc:
                             j_acc = j
-                    l1, l2 = merge(list(current_lines[i].coords), list(current_lines[j_acc].coords))
-                    hash_1 = hash((l1[0], l1[1]))
-                    hash_2 = hash((l2[0], l2[1]))
-                    G.add_edge(hash_1, hash_2, weight=math.sqrt((l1[0] - l2[0]) ** 2 + (l1[1] - l2[1]) ** 2))
+
+                    # Ensure we found a valid candidate before adding the edge
+                    if j_acc != -1:
+                        l1, l2 = sd.merge(list(current_lines[i].coords), list(current_lines[j_acc].coords))
+                        hash_1 = hash((l1[0], l1[1]))
+                        hash_2 = hash((l2[0], l2[1]))
+                        G.add_edge(hash_1, hash_2, weight=math.sqrt((l1[0] - l2[0]) ** 2 + (l1[1] - l2[1]) ** 2))
 
     elif multilinestring.geom_type == 'LineString':
         for i in range(len(multilinestring.coords) - 1):
@@ -213,26 +225,29 @@ def build_medial_graph(multilinestring, line_labels, distance, small_branch=8, c
             row_1, col_1 = sd.xy2rowcol(x_1, y_1, distance.shape[0])
             x_2, y_2 = multilinestring.coords[i + 1][0], multilinestring.coords[i + 1][1]
             row_2, col_2 = sd.xy2rowcol(x_2, y_2, distance.shape[0])
+
             hash_1 = hash((x_1, y_1))
             hash_2 = hash((x_2, y_2))
+
             G.add_node(hash_1, x=x_1, y=y_1, distance=distance[row_1, col_1])
             G.add_node(hash_2, x=x_2, y=y_2, distance=distance[row_2, col_2])
             G.add_edge(hash_1, hash_2, weight=math.sqrt((x_1 - x_2) ** 2 + (y_1 - y_2) ** 2))
 
-    # Remove small branches
-    G.remove_edges_from(nx.selfloop_edges(G))  # remove self-loops for possible error
+    # --- Pruning small branches ---
+    G.remove_edges_from(nx.selfloop_edges(G))
     branchings = [x for x in G.nodes() if G.degree(x) >= 3]
 
     for branching in branchings:
-        # check if the branching is deleted by previous runs
         if branching in G.nodes():
             cut_vertices = list(G.neighbors(branching))
             for cut_vertex in cut_vertices:
                 temp = G.copy()
                 temp.remove_node(branching)
-                connected = nx.dfs_tree(temp, source=cut_vertex).to_undirected()
-                if len(connected.nodes) < small_branch:
-                    G.remove_nodes_from(list(connected.nodes))
+                # Check if cut_vertex still exists in the graph after removing the node
+                if cut_vertex in temp.nodes():
+                    connected = nx.dfs_tree(temp, source=cut_vertex).to_undirected()
+                    if len(connected.nodes) < small_branch:
+                        G.remove_nodes_from(list(connected.nodes))
 
     return G
 
@@ -805,28 +820,43 @@ def heuristic_initialization(cur_node, medial_axis, depth):
     else:
         center = cur_node.centroid()
         polygon_dimensions = cur_node.get_size(cur_node.get_axial(medial_axis))
+
         if polygon_dimensions[0] >= polygon_dimensions[1]:
             cur_node.configuration = 2
             cut_crosswise = LineString([Point(p) for p in
                                         centroid_cut(cur_node.centroid(), cur_node.get_crosswise(medial_axis),
                                                      polygon_dimensions[1])])
-            a = list(ops.split(cur_node.polygon, cut_crosswise))
-            a.sort(key=lambda x: -x.area)
-            cur_node.left_child.polygon = a[0]
-            heuristic_initialization(cur_node.left_child, medial_axis, depth - 1)
-            cur_node.right_child.polygon = a[1]
-            heuristic_initialization(cur_node.right_child, medial_axis, depth - 1)
-        else:
-            cur_node.configuration = 0
-            cut_axial = LineString([Point(p) for p in centroid_cut(cur_node.centroid(), cur_node.get_axial(medial_axis),
-                                                                   polygon_dimensions[0])])
-            a = list(ops.split(cur_node.polygon, cut_axial))
+
+            # FIX: Access .geoms before converting to a list
+            split_result = ops.split(cur_node.polygon, cut_crosswise)
+            a = list(split_result.geoms)
+
+            if len(a) < 2:
+                return  # Safety: if the cut didn't actually split the polygon
+
             a.sort(key=lambda x: -x.area)
             cur_node.left_child.polygon = a[0]
             heuristic_initialization(cur_node.left_child, medial_axis, depth - 1)
             cur_node.right_child.polygon = a[1]
             heuristic_initialization(cur_node.right_child, medial_axis, depth - 1)
 
+        else:
+            cur_node.configuration = 0
+            cut_axial = LineString([Point(p) for p in centroid_cut(cur_node.centroid(), cur_node.get_axial(medial_axis),
+                                                                   polygon_dimensions[0])])
+
+            # FIX: Access .geoms before converting to a list
+            split_result = ops.split(cur_node.polygon, cut_axial)
+            a = list(split_result.geoms)
+
+            if len(a) < 2:
+                return  # Safety: if the cut didn't actually split the polygon
+
+            a.sort(key=lambda x: -x.area)
+            cur_node.left_child.polygon = a[0]
+            heuristic_initialization(cur_node.left_child, medial_axis, depth - 1)
+            cur_node.right_child.polygon = a[1]
+            heuristic_initialization(cur_node.right_child, medial_axis, depth - 1)
 
 import random
 
@@ -893,7 +923,7 @@ Recursively solve for the optimal slicing tree
 def get_optimal(tree_node, medial_axis):
     if tree_node.is_leaf():
         # Handling Axial case
-        convex = tree_node.polygon.convex_hull.simplify(10)  # Simplify the geometry to speed up
+        convex = tree_node.polygon.convex_hull.simplify(10)
         quality_cell = cell_quality(tree_node.polygon)
         optimal = min_rec(convex.exterior.coords, tree_node.assignment['aspect_ratio'],
                           list(convex.representative_point().coords)[0])
@@ -907,7 +937,7 @@ def get_optimal(tree_node, medial_axis):
         else:
             return optimal[1] * -0.8, decision  # penalty
     else:
-        if tree_node.configuration == -1:  # If the configuration is not determined yet
+        if tree_node.configuration == -1:  # Configuration not determined yet
             acc = []
             cuts = []
             polygon_dimensions = tree_node.get_size(tree_node.get_axial(medial_axis))
@@ -917,46 +947,48 @@ def get_optimal(tree_node, medial_axis):
             cut_crosswise = LineString([Point(p) for p in
                                         centroid_cut(tree_node.centroid(), tree_node.get_crosswise(medial_axis),
                                                      polygon_dimensions[1])])
-            # Handling Axial case
-            a = list(ops.split(tree_node.polygon, cut_axial))
+
+            # FIX 1: Axial Split
+            a = list(ops.split(tree_node.polygon, cut_axial).geoms)
             a.sort(key=lambda x: -x.area)
             cut = tree_node.polygon.intersection(cut_axial)
-            # Deal with small interesecting line segment
+
+            # FIX 2: MultiLineString iteration
             if cut.geom_type == 'MultiLineString':
-                lines = [line for line in cut]
+                lines = [line for line in cut.geoms]
                 lines.sort(key=lambda x: -x.length)
                 cut = lines[0]
             cuts.append(cut)
 
-            # Axial case 1
+            # Axial cases
             tree_node.right_child.polygon = a[0]
             tree_node.left_child.polygon = a[1]
             acc.append(
                 (get_optimal(tree_node.left_child, medial_axis), get_optimal(tree_node.right_child, medial_axis)))
 
-            # Axial case 2
             tree_node.right_child.polygon = a[1]
             tree_node.left_child.polygon = a[0]
             acc.append(
                 (get_optimal(tree_node.left_child, medial_axis), get_optimal(tree_node.right_child, medial_axis)))
 
-            # Handling Crosswise case
-            a = list(ops.split(tree_node.polygon, cut_crosswise))
+            # FIX 3: Crosswise Split
+            a = list(ops.split(tree_node.polygon, cut_crosswise).geoms)
             a.sort(key=lambda x: -x.area)
             cut = tree_node.polygon.intersection(cut_crosswise)
-            # Deal with small interesecting line segment
+
+            # FIX 4: MultiLineString iteration
             if cut.geom_type == 'MultiLineString':
-                lines = [line for line in cut]
+                lines = [line for line in cut.geoms]
                 lines.sort(key=lambda x: -x.length)
                 cut = lines[0]
             cuts.append(cut)
-            # Crosswise case 1
+
+            # Crosswise cases
             tree_node.right_child.polygon = a[0]
             tree_node.left_child.polygon = a[1]
             acc.append(
                 (get_optimal(tree_node.left_child, medial_axis), get_optimal(tree_node.right_child, medial_axis)))
 
-            # Crosswise case 2
             tree_node.right_child.polygon = a[1]
             tree_node.left_child.polygon = a[0]
             acc.append(
@@ -972,7 +1004,8 @@ def get_optimal(tree_node, medial_axis):
             decision.right_child = acc[np.argmax(utility)][1][1]
 
             return max(utility), decision
-        else:  # If the configuration is predifined (to reduce calculation)
+
+        else:  # Configuration is predefined
             acc = []
             polygon_dimensions = tree_node.get_size(tree_node.get_axial(medial_axis))
             cut_axial = LineString([Point(p) for p in
@@ -981,16 +1014,18 @@ def get_optimal(tree_node, medial_axis):
             cut_crosswise = LineString([Point(p) for p in
                                         centroid_cut(tree_node.centroid(), tree_node.get_crosswise(medial_axis),
                                                      polygon_dimensions[1])])
-            # Handling Axial case
-            a = list(ops.split(tree_node.polygon, cut_axial))
+
+            # FIX 5: Axial Split
+            a = list(ops.split(tree_node.polygon, cut_axial).geoms)
             a.sort(key=lambda x: -x.area)
             cut_a = tree_node.polygon.intersection(cut_axial)
-            # Deal with small interesecting line segment
+
+            # FIX 6: MultiLineString iteration
             if cut_a.geom_type == 'MultiLineString':
-                lines = [line for line in cut_a]
+                lines = [line for line in cut_a.geoms]
                 lines.sort(key=lambda x: -x.length)
                 cut_a = lines[0]
-            # Axial case 1
+
             if tree_node.configuration == 0:
                 tree_node.right_child.polygon = a[0]
                 tree_node.left_child.polygon = a[1]
@@ -998,23 +1033,24 @@ def get_optimal(tree_node, medial_axis):
                 get_optimal(tree_node.left_child, medial_axis), get_optimal(tree_node.right_child, medial_axis))
                 cut = cut_a
 
-            # Axial case 2
             if tree_node.configuration == 1:
                 tree_node.right_child.polygon = a[1]
                 tree_node.left_child.polygon = a[0]
                 optimum = (
                 get_optimal(tree_node.left_child, medial_axis), get_optimal(tree_node.right_child, medial_axis))
                 cut = cut_a
-            # Handling Crosswise case
-            a = list(ops.split(tree_node.polygon, cut_crosswise))
+
+            # FIX 7: Crosswise Split
+            a = list(ops.split(tree_node.polygon, cut_crosswise).geoms)
             a.sort(key=lambda x: -x.area)
             cut_c = tree_node.polygon.intersection(cut_crosswise)
-            # Deal with small interesecting line segment
+
+            # FIX 8: MultiLineString iteration
             if cut_c.geom_type == 'MultiLineString':
-                lines = [line for line in cut_c]
+                lines = [line for line in cut_c.geoms]
                 lines.sort(key=lambda x: -x.length)
                 cut_c = lines[0]
-            # Crosswise case 1
+
             if tree_node.configuration == 2:
                 tree_node.right_child.polygon = a[0]
                 tree_node.left_child.polygon = a[1]
@@ -1022,7 +1058,6 @@ def get_optimal(tree_node, medial_axis):
                 get_optimal(tree_node.left_child, medial_axis), get_optimal(tree_node.right_child, medial_axis))
                 cut = cut_c
 
-            # Crosswise case 2
             if tree_node.configuration == 3:
                 tree_node.right_child.polygon = a[1]
                 tree_node.left_child.polygon = a[0]
@@ -1040,7 +1075,6 @@ def get_optimal(tree_node, medial_axis):
             decision.right_child = optimum[1][1]
 
             return utility, decision
-
 
 import cv2
 
@@ -1271,7 +1305,7 @@ def optimization(input_shape, input_mask_folder, output_dir, quiet=True):
     for cut in prediction:
         prediction_partition.add_cut(cut)
 
-    if quiet:
+    if not quiet:
         prediction_partition.render_partition()
         plt.savefig(join(output_dir, 'raw_parts.png'), bbox_inches='tight')
 
@@ -1317,7 +1351,7 @@ def optimization(input_shape, input_mask_folder, output_dir, quiet=True):
     forest = [r[1] for r in result]
     geometry = extract_forest_geometry(forest)
 
-    if quiet:
+    if not quiet:
         plt.clf()
         render_matching_result([g['coords'] for g in geometry[0]], [g['foreground'] for g in geometry[0]], geometry[1],
                                image.shape[1], image.shape[0], label=True)

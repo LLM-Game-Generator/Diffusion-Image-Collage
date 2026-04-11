@@ -1,11 +1,13 @@
 import os
 import glob
 import time
+import traceback
 import concurrent.futures
 import src.icas.sas_optimization as so
 import src.icas.shape_decomposition as sd
 import src.icas.collage_assembly as ca
-from generate_control_maps import generate_control_maps
+import src.icas.fast_image_collage as fca
+from src.utils.generate_control_maps import generate_control_maps
 
 
 
@@ -23,7 +25,8 @@ def process_single_frame(frame_path: str, json_dir: str, mask_dir: str, assets_i
         so.optimization(frame_path, mask_dir, frame_json_dir, True)
 
         # Render collage
-        ca.render_collage(assets_images_dir, frame_json_dir, 2)
+        # ca.render_collage(assets_images_dir, frame_json_dir, 1)
+        fca.fast_render_collage(assets_images_dir, frame_json_dir, 2)
 
         # Generate control map
         if is_generate_control_maps and control_maps_dir is not None and os.path.exists(control_maps_dir):
@@ -41,8 +44,11 @@ def process_single_frame(frame_path: str, json_dir: str, mask_dir: str, assets_i
             else:
                 return f"❌ {frame_name} 失敗: optimization 未產生 slicing_result.json (檢查 MASK_DIR 是否有圖?)"
 
+        return f"✅ {frame_name} 完成"
 
     except Exception as e:
+        error_stack = traceback.format_exc()
+        print(f"\n--- ERROR IN {frame_path} ---\n{error_stack}\n----------------------------\n")
         return f"💥 {frame_path} 崩潰: {str(e)}"
 
 
