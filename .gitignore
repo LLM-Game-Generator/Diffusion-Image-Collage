@@ -3,5 +3,6 @@ __pycache__
 **/input_silhouette_frames/
 **/batch_output/
 **/videos/
-**/assets/masks
+**/assets/masks/
+**/temp/
 .venv/

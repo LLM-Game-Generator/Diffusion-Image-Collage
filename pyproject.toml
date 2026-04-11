@@ -3,4 +3,12 @@ name = "colla"
 version = "0.1.0"
 description = "Add your description here"
 requires-python = ">=3.9"
-dependencies = []
+dependencies = [
+    "matplotlib>=3.9.4",
+    "onnxruntime-gpu>=1.20.2",
+    "ortools>=9.15.6755",
+    "pandas>=2.3.3",
+    "rembg>=2.0.61",
+    "scikit-image>=0.24.0",
+    "seam-carving>=1.1.0",
+]
