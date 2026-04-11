@@ -2,6 +2,13 @@ __pycache__
 
 **/input_silhouette_frames/
 **/batch_output/
+
+# videos
 **/videos/*
+!**/videos/.gitkeep
+
+# assets
 **/assets/*
+!**/assets/.gitkeep
+
 .venv/
