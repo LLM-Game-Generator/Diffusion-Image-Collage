@@ -1,6 +1,6 @@
 from rembg import remove
 from PIL import Image
-from src.config import ASSETS_IMAGES_PATH, ASSETS_MASKS_PATH
+from src.config import ASSETS_IMAGES_DIR, ASSETS_MASKS_DIR
 import os
 
 
@@ -36,6 +36,7 @@ def images_to_masks_from_dir(input_dir, output_dir, overwrite=False):
             file_name_without_ext = os.path.splitext(file)[0]
             output_path = os.path.join(output_dir, f"{file_name_without_ext}.png")
 
+            # print(os.path.exists(output_path))
             create_binary_mask(image_path, output_path, overwrite=overwrite)
 
     return True
@@ -43,5 +44,5 @@ def images_to_masks_from_dir(input_dir, output_dir, overwrite=False):
 
 if __name__ == "__main__":
 
-    success = images_to_masks_from_dir(ASSETS_IMAGES_PATH, ASSETS_MASKS_PATH, overwrite=False)
+    success = images_to_masks_from_dir(ASSETS_IMAGES_DIR, ASSETS_MASKS_DIR, overwrite=False)
     print(f"執行結果：{success}")
