@@ -29,7 +29,7 @@ def process_single_frame(frame_path: str, json_dir: str, mask_dir: str, assets_i
         fca.fast_render_collage(assets_images_dir, frame_json_dir, 2)
 
         # Generate control map
-        if is_generate_control_maps and control_maps_dir is not None and os.path.exists(control_maps_dir):
+        if is_generate_control_maps and control_maps_dir is not None:
             json_path = os.path.join(frame_json_dir, "slicing_result.json")
             if os.path.exists(json_path):
                 target_filename = f"control_{frame_name}.png"
@@ -69,7 +69,10 @@ def frame_multiprocessing(frame_dir: str, json_dir: str, mask_dir: str, assets_i
 
     total_frames = len(frame_files)
 
-    print(f"🚀 啟動 9600X 多核心加速 (Workers: {max_workers})...")
+    if is_generate_control_maps and control_maps_dir is not None:
+        os.makedirs(control_maps_dir, exist_ok=True)
+
+    print(f"多核心加速 (Workers: {max_workers})...")
     start_time = time.time()
 
     with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as executor:
@@ -86,4 +89,4 @@ def frame_multiprocessing(frame_dir: str, json_dir: str, mask_dir: str, assets_i
             print(f"[{completed}/{total_frames}] {result_msg}")
 
     total_duration = time.time() - start_time
-    print(f"\n✨ 處理結束！總耗時: {total_duration:.2f} 秒")
+    print(f"\n 處理結束！總耗時: {total_duration:.2f} 秒")
