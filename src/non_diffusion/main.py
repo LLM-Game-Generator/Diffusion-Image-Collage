@@ -8,9 +8,9 @@ from src.config import *
 
 def main():
     video_to_silhouettes(VIDEO_PATH, FRAME_DIR, TARGET_SIZE, FRAME_INTERVAL)
-    
+
     images_to_masks_from_dir(ASSETS_IMAGES_DIR, ASSETS_MASKS_DIR, overwrite=False)
-    
+
     frame_multiprocessing(
         frame_dir=FRAME_DIR,
         json_dir=JSON_DIR,

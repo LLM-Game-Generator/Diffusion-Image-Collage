@@ -4,7 +4,7 @@ from src.utils.image_to_mask import images_to_masks_from_dir
 from src.utils.images_to_video import VideoGenerator
 from src.utils.batch_icas_tool import process_single_frame
 from src.icas.dynamic_sas_generator import generate_dynamic_sequence
-from src.icas.fast_batch_collage_renderer import batch_render_video_frames
+from src.icas.fast_image_collage import batch_render_video_frames
 from src.config import *
 
 
@@ -31,7 +31,7 @@ def main(frame_no: str, remove_existing_collage_sequence: bool = True):
         remove_files_in_folder(JSON_SEQUENCE_DIR)
         remove_files_in_folder(COLLAGE_SEQUENCE_DIR)
 
-    video_to_silhouettes(VIDEO_PATH, FRAME_DIR, TARGET_SIZE, FRAME_INTERVAL)
+    # video_to_silhouettes(VIDEO_PATH, FRAME_DIR, TARGET_SIZE, FRAME_INTERVAL)
 
     frame_path = os.path.join(FRAME_DIR, f"{frame_no}.png")
 
@@ -39,14 +39,18 @@ def main(frame_no: str, remove_existing_collage_sequence: bool = True):
 
     process_single_frame(frame_path, JSON_DIR, ASSETS_MASKS_DIR, ASSETS_IMAGES_DIR, False)
 
+    targets = {
+        "animal.jpg": 4.0,
+        "flower.jpg": 3.0
+    }
+
     generate_dynamic_sequence(
         frame_dir=FRAME_DIR,
         frame_no=frame_no,
         input_mask_folder=ASSETS_MASKS_DIR,
         output_dir=JSON_SEQUENCE_DIR,
-        target_image="animal.jpg",
+        target_images_config=targets,
         total_frames=60,
-        max_weight_multiplier=4.0
     )
 
     batch_render_video_frames(
@@ -61,7 +65,7 @@ def main(frame_no: str, remove_existing_collage_sequence: bool = True):
 
 
 if __name__ == '__main__':
-    main("frame_0003", remove_existing_collage_sequence=True)
+    main("frame_0012", remove_existing_collage_sequence=True)
 
 
 

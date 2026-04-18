@@ -82,7 +82,7 @@ class CollageVideoGenerator(VideoGenerator):
             if not os.path.isdir(dir_path):
                 continue
 
-            img_path = os.path.join(dir_path, "collage_white_space.png")
+            img_path = os.path.join(dir_path, "collage.png")
             if os.path.exists(img_path):
                 image_paths.append(img_path)
 

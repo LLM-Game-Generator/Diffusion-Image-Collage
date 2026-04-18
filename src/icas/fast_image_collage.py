@@ -3,6 +3,7 @@ import cv2
 import time
 import numpy as np
 import os
+import glob
 from src.config import *
 
 # Global Cache: Allows different frames within the same process to share image memory,
@@ -21,6 +22,7 @@ def get_cached_image(image_folder, img_name, max_w, max_h):
     img = cv2.imread(img_path)
 
     if img is None:
+        print(f"[Warning] Image not found: {img_path}")
         return None
 
     img_h, img_w = img.shape[:2]
@@ -33,44 +35,38 @@ def get_cached_image(image_folder, img_name, max_w, max_h):
     return img
 
 
-def fast_render_collage(image_folder, json_dir, scaling_factor=1):
+def render_single_frame(json_path, output_path, image_folder, scaling_factor=1, border_thickness_base=3):
     """
-    Extreme I/O Optimized Version:
-    Incorporates a Global Cache to prevent multiple frames from repeatedly reading the same assets.
+    Core rendering logic: Renders a single frame. Reads coordinates from the specified json_path and outputs to output_path.
+    It also automatically generates a white-bordered version with the '_white_space' suffix!
     """
-    json_path = os.path.join(json_dir, 'slicing_result.json')
-    # Removed os.path.exists check; use try-except directly to save one Disk I/O operation
     try:
         with open(json_path, 'r') as f:
             data = json.load(f)
     except FileNotFoundError:
-        return
+        print(f"[Error] JSON not found: {json_path}")
+        return False
 
-    # 1. Initialize canvas [Correction: Use 4-channel BGRA, default to 0 (fully transparent)]
     w = int(data['width'] * scaling_factor)
     h = int(data['height'] * scaling_factor)
-    canvas = np.zeros((h, w, 4), dtype=np.uint8)
+    canvas = np.zeros((h, w, 4), dtype=np.uint8)  # BGRA transparent canvas
 
-    # 2. Create image mapping table
+    # Create image mapping table
     part_to_img = {}
     for img_info in data['images']:
         part_to_img[img_info['assigned_part']] = img_info['filename']
 
-    # 3. Render each cell
+    # Render each cell
     for i, part in enumerate(data['parts']):
         img_name = part_to_img.get(i)
         if not img_name:
             continue
 
-        # Use global cache to retrieve image, passing max canvas dimensions for pre-scaling
         img = get_cached_image(image_folder, img_name, w, h)
         if img is None:
             continue
 
-        # Get scaled coordinates
         coords = (np.array(part['coords']) * scaling_factor).astype(np.int32)
-
-        # Get the bounding box of the polygon
         bx, by, bw, bh = cv2.boundingRect(coords)
 
         # Boundary safety checks
@@ -81,7 +77,7 @@ def fast_render_collage(image_folder, json_dir, scaling_factor=1):
         if bw <= 0 or bh <= 0:
             continue
 
-        # Center cropping and asset scaling
+        # Center cropping and scaling
         img_h, img_w = img.shape[:2]
         target_aspect = bw / bh if bh > 0 else 1
         img_aspect = img_w / img_h if img_h > 0 else 1
@@ -96,40 +92,99 @@ def fast_render_collage(image_folder, json_dir, scaling_factor=1):
             img_cropped = img[start_y:start_y + new_h, :]
 
         img_resized = cv2.resize(img_cropped, (bw, bh), interpolation=cv2.INTER_LINEAR)
-
-        # Fix inverted image issue (double negatives cancel out)
         img_resized = cv2.flip(img_resized, 0)
-
-        # [Correction: Convert image to BGRA (4-channel) to provide an opaque Alpha channel]
         img_resized_bgra = cv2.cvtColor(img_resized, cv2.COLOR_BGR2BGRA)
 
-        # Local Mask
+        # Create local mask and paste onto canvas
         local_coords = coords - [bx, by]
         mask_roi = np.zeros((bh, bw), dtype=np.uint8)
         cv2.fillPoly(mask_roi, [local_coords], 255)
 
-        # Capture ROI to accelerate bitwise operations (canvas_roi is also 4-channel here)
         canvas_roi = canvas[by:by + bh, bx:bx + bw]
-
-        # Paste onto canvas (map the processed BGRA image onto the transparent canvas)
         np.copyto(canvas_roi, img_resized_bgra, where=(mask_roi == 255)[..., None])
 
-    # Flip image (convert ICAS coordinate system to the correct visual coordinate system)
-    canvas = cv2.flip(canvas, 0)
+    # 1. Save the ORIGINAL collage WITHOUT borders
+    canvas_pure = cv2.flip(canvas, 0)
+    cv2.imwrite(output_path, canvas_pure, [cv2.IMWRITE_PNG_COMPRESSION, 1])
 
-    save_path = os.path.join(json_dir, 'collage.png')
-    cv2.imwrite(save_path, canvas, [cv2.IMWRITE_PNG_COMPRESSION, 1])
+    # 2. Draw White Borders on the original unflipped canvas
+    thickness = max(1, int(border_thickness_base * scaling_factor))
+    white_color_bgra = (255, 255, 255, 255)  # Pure white, opaque
+
+    # Draw lines along the edges of each polygon
+    for part in data['parts']:
+        coords = (np.array(part['coords']) * scaling_factor).astype(np.int32)
+        cv2.polylines(canvas, [coords], isClosed=True, color=white_color_bgra, thickness=thickness,
+                      lineType=cv2.LINE_AA)
+
+    # 3. Save the NEW collage WITH white space / borders
+    canvas_white_space = cv2.flip(canvas, 0)
+
+    # Append '_white_space' suffix to the output_path
+    base_name, ext = os.path.splitext(output_path)
+    output_path_white = f"{base_name}_white_space{ext}"
+    cv2.imwrite(output_path_white, canvas_white_space, [cv2.IMWRITE_PNG_COMPRESSION, 1])
+
+    return True
+
+
+def fast_render_collage(image_folder, json_dir, scaling_factor=1, border_thickness_base=3):
+    """
+    Interface compatible with the original ICAS single-frame generation.
+    Automatically reads json_dir/slicing_result.json.
+    """
+    json_path = os.path.join(json_dir, 'slicing_result.json')
+    output_path = os.path.join(json_dir, 'collage.png')
+    render_single_frame(json_path, output_path, image_folder, scaling_factor, border_thickness_base)
+
+
+def batch_render_video_frames(image_folder, json_sequence_dir, output_dir, scaling_factor=1, border_thickness_base=3):
+    """
+    Batch processes all JSON files in the directory to generate a continuous PNG collage animation.
+    """
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+
+    json_files = sorted(glob.glob(os.path.join(json_sequence_dir, "*.json")))
+
+    if not json_files:
+        print(f"[Warning] No JSON files found in {json_sequence_dir}")
+        return
+
+    print(f"Starting batch render for {len(json_files)} frames...")
+    start_time = time.perf_counter()
+
+    for idx, json_path in enumerate(json_files):
+        out_filename = f"collage_{idx:04d}.png"
+        output_path = os.path.join(output_dir, out_filename)
+
+        success = render_single_frame(json_path, output_path, image_folder, scaling_factor, border_thickness_base)
+        if success:
+            print(f"  [Rendered] {out_filename} (and white_space version)")
+
+    end_time = time.perf_counter()
+    print(f"Batch rendering complete! Total time: {end_time - start_time:.4f} seconds.")
 
 
 if __name__ == '__main__':
-    # Test execution time for the first run (Cache warming)
-    start = time.perf_counter()
-    fast_render_collage(ASSETS_IMAGES_DIR, os.path.join(JSON_DIR, "frame_0000"), scaling_factor=2)
-    end = time.perf_counter()
-    print(f"render_collage execution time 1: {end - start:.6f} seconds")
+    # You can choose to run single-frame testing or batch rendering here based on your needs
 
-    # Test execution time for the second run (Hit cache)
-    start = time.perf_counter()
-    fast_render_collage(ASSETS_IMAGES_DIR, os.path.join(JSON_DIR, "frame_0000"), scaling_factor=2)
-    end = time.perf_counter()
-    print(f"render_collage execution time 2: {end - start:.6f} seconds")
+    # === Test single-frame rendering (with cache) ===
+    # start = time.perf_counter()
+    # fast_render_collage(ASSETS_IMAGES_DIR, os.path.join(JSON_DIR, "frame_0000"), scaling_factor=2, border_thickness_base=3)
+    # end = time.perf_counter()
+    # print(f"Single frame execution time (wait for io): {end - start:.6f} seconds")
+
+    # start = time.perf_counter()
+    # fast_render_collage(ASSETS_IMAGES_DIR, os.path.join(JSON_DIR, "frame_0000"), scaling_factor=2, border_thickness_base=3)
+    # end = time.perf_counter()
+    # print(f"Single frame execution time (with cache): {end - start:.6f} seconds")
+
+    # === Test batch rendering ===
+    batch_render_video_frames(
+        image_folder=ASSETS_IMAGES_DIR,
+        json_sequence_dir=JSON_SEQUENCE_DIR,
+        output_dir=COLLAGE_SEQUENCE_DIR,  # Please match the output path set in your config.py here
+        scaling_factor=2,
+        border_thickness_base=3
+    )

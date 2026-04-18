@@ -1,4 +1,5 @@
 import json
+import os
 import sys
 import copy
 from src.config import *
@@ -109,17 +110,17 @@ def weighted_temporal_optimization(tree_node, medial_axis, multipliers):
 def generate_dynamic_sequence(
         frame_dir: str,
         frame_no: str,
-        input_mask_folder: str, 
-        output_dir: str, 
-        target_image: str, 
+        input_mask_folder: str,
+        output_dir: str,
+        target_images_config: dict = None,
         total_frames: int = None,
-        max_weight_multiplier: float = None,
 ):
+    if target_images_config is None:
+        target_images_config = {f.replace(".png", ".jpg"): 1.0 for f in os.listdir(input_mask_folder) if f.endswith('.png')}
+
     if total_frames is None:
         total_frames = 60
-    if max_weight_multiplier is None:
-        max_weight_multiplier = 4.0
-    
+
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
 
@@ -166,21 +167,26 @@ def generate_dynamic_sequence(
 
     images = process_image_for_optimization(image_dict)
 
-    target_img_id = None
-    for img in images:
-        img_filename = image_dict[img['id']]['filename']
-        if target_image.lower() in img_filename.lower():
-            target_img_id = img['id']
-            break
+    # 批次防呆鎖定機制：精準尋找多個目標圖片
+    target_img_ids = {}  # img_id -> target_multiplier
+    available_filenames = [d['filename'] for d in image_dict]
 
-    if target_img_id is None:
-        available_images = [d['filename'] for d in image_dict]
-        print(f"\n❌ [嚴重錯誤] 找不到目標圖片 '{target_image}'！")
-        print(f"💡 目前系統載入的圖片清單有: {available_images}")
-        print(f"👉 請檢查上方 target_image 是否打錯，程式已停止以避免浪費算力。")
+    for target_filename, target_multiplier in target_images_config.items():
+        found = False
+        for img in images:
+            img_filename = image_dict[img['id']]['filename']
+            if target_filename.lower() in img_filename.lower():
+                target_img_ids[img['id']] = target_multiplier
+                found = True
+                print(f"✅ 成功鎖定目標：{img_filename} (目標倍率: {target_multiplier}x)")
+                break
+        if not found:
+            print(f"⚠️ [警告] 找不到設定檔中的圖片 '{target_filename}'，將自動忽略此項！")
+
+    if not target_img_ids:
+        print(f"\n❌ [嚴重錯誤] 設定檔中所有的圖片都找不到！")
+        print(f"💡 目前系統載入的圖片清單有: {available_filenames}")
         sys.exit(1)
-    else:
-        print(f"✅ 成功鎖定放大目標：{target_image} (系統 ID: {target_img_id})")
 
     ss = forest_initialization(convex_parts, len(images), prediction_partition.root.polygon.area, True,
                                multilinestring_int)
@@ -210,16 +216,18 @@ def generate_dynamic_sequence(
         json.dump(base_optimization_output, f)
     print("  [Generated] slicing_0000.json (基準佈局)")
 
-    # 開始平滑推擠
-    growth_step = (max_weight_multiplier - 1.0) / total_frames
-
+    # 開始平滑推擠 (多目標線性插值)
     for frame_idx in range(1, total_frames):
         multipliers = {}
         for img in images:
-            if img['id'] == target_img_id:
-                multipliers[img['id']] = 1.0 + (frame_idx * growth_step)
+            img_id = img['id']
+            if img_id in target_img_ids:
+                target_mult = target_img_ids[img_id]
+                # 依時間比例計算目前的倍率 (從 1.0 漸變到 target_mult)
+                current_mult = 1.0 + (target_mult - 1.0) * (frame_idx / (total_frames - 1))
+                multipliers[img_id] = current_mult
             else:
-                multipliers[img['id']] = 1.0
+                multipliers[img_id] = 1.0
 
         for tree in forest:
             weighted_temporal_optimization(tree, multilinestring_int[0], multipliers)
@@ -234,18 +242,23 @@ def generate_dynamic_sequence(
         with open(os.path.join(output_dir, out_filename), 'w') as f:
             json.dump(current_output, f)
 
-        print(f"  [Generated] {out_filename} (目標膨脹倍率: {multipliers[target_img_id]:.2f}x)")
+        print(f"  [Generated] {out_filename}")
 
-    print(f"✅ 成功生成 {total_frames} 幀完美平滑推擠序列！")
+    print(f"✅ 成功生成 {total_frames} 幀多目標平滑推擠序列！")
 
 
 if __name__ == "__main__":
+    # 在這裡設定多個目標！大於 1 放大，小於 1 縮小。
+    targets = {
+        "animal.jpg": 4.0,  # 第一張圖片放大 4 倍
+        "flower.jpg": 0.5  # 假設你有這張圖片，它會縮小一半
+    }
+
     generate_dynamic_sequence(
-        FRAME_DIR,
-        "frame_0000",
-        ASSETS_MASKS_DIR,
-        JSON_SEQUENCE_DIR,
-        target_image="animal.jpg",
+        frame_dir=FRAME_DIR,
+        frame_no="frame_0000",
+        input_mask_folder=ASSETS_MASKS_DIR,
+        output_dir=JSON_SEQUENCE_DIR,
+        target_images_config=targets,
         total_frames=60,
-        max_weight_multiplier=4.0,
     )
