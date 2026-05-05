@@ -21,7 +21,7 @@ def remove_files_in_folder(folder: str):
 
 class CollageSequenceGenerator(VideoGenerator):
     def get_image_paths(self, image_dir: str) -> list:
-        files = [os.path.join(image_dir, f) for f in os.listdir(image_dir) if f.endswith('.png')]
+        files = [os.path.join(image_dir, f) for f in os.listdir(image_dir) if f.endswith('white_space.png')]
         return sorted(files)
 
 
@@ -57,7 +57,8 @@ def main(frame_no: str, remove_existing_collage_sequence: bool = True):
         image_folder=ASSETS_IMAGES_DIR,
         json_sequence_dir=JSON_SEQUENCE_DIR,
         output_dir=COLLAGE_SEQUENCE_DIR,
-        scaling_factor=2
+        scaling_factor=2,
+        border_thickness_base=1
     )
 
     generator = CollageSequenceGenerator()
